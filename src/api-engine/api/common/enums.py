@@ -130,7 +130,8 @@ class FabricCAServerType(ExtraEnum):
 
 @unique
 class FabricVersions(ExtraEnum):
-    V1_4 = "1.4.2"
+    V1_4 = "1.4"
+    V1_4_2 = "1.4.2"
     V1_5 = "1.5"
 
 
@@ -140,6 +141,11 @@ class FabricNodeType(ExtraEnum):
     Orderer = 1
     Peer = 2
 
+@unique
+class FabricImages(ExtraEnum):
+    Ca = "hyperledger/fabric-ca"
+    Peer = "hyperledger/fabric-peer"
+    Orderer = "hyperledger/fabric-orderer"
 
 @unique
 class NodeStatus(ExtraEnum):

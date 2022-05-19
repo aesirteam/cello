@@ -21,18 +21,21 @@ class KubernetesAgent(AgentBase):
         self._network_type = node.get("network_type")
         self._network_version = node.get("network_version")
         self._node_type = node.get("type")
-        self._node_id = node.get("id")
-        self._agent_id = node.get("agent_id")
-
+        self._node_id = str(node.get("id"))
+        self._node_name = node.get("node_name")
+        self._agent_id = str(node.get("agent_id"))
+       
         self._client = KubernetesClient(config_file=config_file)
         self._network = FabricNetwork(
             version=self._network_version,
             node_type=self._node_type,
             agent_id=self._agent_id,
             node_id=self._node_id,
+            node_name=self._node_name
         )
         self._client.get_or_create_namespace(name=self._agent_id)
         self._config = self._network.generate_config()
+        LOG.debug("KubernetesAgent: %s" % (self._config))
 
     def create(self, *args, **kwargs):
         deployment = self._config.get("deployment")
@@ -40,7 +43,7 @@ class KubernetesAgent(AgentBase):
         ingress = self._config.get("ingress")
 
         if deployment:
-            self._client.create_deployment(self._agent_id, **deployment)
+            success, deploy_response = self._client.create_deployment(self._agent_id, **deployment)
         if service:
             success, service_response = self._client.create_service(
                 self._agent_id, **service
@@ -52,8 +55,10 @@ class KubernetesAgent(AgentBase):
                     for port in ports
                 ]
                 set_ports_mapping(self._node_id, ports, True)
-        if ingress:
-            self._client.create_ingress(self._agent_id, **ingress)
+        # if ingress:
+        #     self._client.create_ingress(self._agent_id, **ingress)
+        if success:
+            return deploy_response.metadata.uid
 
     def start(self, *args, **kwargs):
         pass
@@ -64,12 +69,12 @@ class KubernetesAgent(AgentBase):
     def delete(self, *args, **kwargs):
         deployment = self._config.get("deployment")
         service = self._config.get("service")
-        ingress = self._config.get("ingress")
+        # ingress = self._config.get("ingress")
 
-        if ingress:
-            self._client.delete_ingress(
-                namespace=self._agent_id, name=ingress.get("name")
-            )
+        # if ingress:
+        #     self._client.delete_ingress(
+        #         namespace=self._agent_id, name=ingress.get("name")
+        #     )
         if service:
             self._client.delete_service(
                 namespace=self._agent_id, name=service.get("name")

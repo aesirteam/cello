@@ -20,7 +20,7 @@ from rest_framework.response import Response
 from rest_framework_jwt.authentication import JSONWebTokenAuthentication
 
 from api.auth import IsOperatorAuthenticated
-from api.common.enums import NodeStatus, AgentOperation, Operation
+from api.common.enums import NodeStatus, AgentOperation, Operation, FabricVersions
 from api.exceptions import CustomError, NoResource, ResourceExists, ResourceInUse
 from api.exceptions import ResourceNotFound
 from api.models import (
@@ -467,6 +467,8 @@ class NodeViewSet(viewsets.ViewSet):
             info = {}
             org_name = org.name if node.type == "peer" else org.name.split(".", 1)[1]
             # get info of node, e.g, tls, msp, config.
+            info["id"] = node.id
+            info["node_name"] = node.name
             info["status"] = node.status
             info["msp"] = node.msp
             info["tls"] = node.tls
@@ -476,6 +478,8 @@ class NodeViewSet(viewsets.ViewSet):
             info["bootstrap_block"] = network.genesisblock
             info["urls"] = agent.urls
             info["network_type"] = network.type
+            info["network_version"] = FabricVersions.V1_4.value
+            info["agent_id"] = agent.id
             info["agent_type"] = agent.type
             info["container_name"] = "{}.{}".format(node.name, org_name)
             info["ports"] = ports

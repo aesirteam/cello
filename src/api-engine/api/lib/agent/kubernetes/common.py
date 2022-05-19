@@ -49,7 +49,7 @@ class KubernetesClient(object):
         containers = kwargs.get("containers", [])
         deploy_name = kwargs.get("name")
         labels = kwargs.get("labels", {})
-        labels.update({"app": deploy_name})
+        # labels.update({"app": deploy_name})
         container_pods = []
         for container in containers:
             name = container.get("name")
@@ -83,25 +83,29 @@ class KubernetesClient(object):
         template_spec = client.V1PodTemplateSpec(
             metadata=spec_metadata, spec=pod_spec
         )
-        spec = client.ExtensionsV1beta1DeploymentSpec(template=template_spec)
-        body = client.ExtensionsV1beta1Deployment(
-            api_version="extensions/v1beta1",
+        spec= client.V1DeploymentSpec(
+            selector=client.V1LabelSelector(match_labels=labels),
+            template=template_spec
+        )
+
+        body = client.V1Deployment(
+            api_version="apps/v1",
             kind="Deployment",
             metadata=deployment_metadata,
             spec=spec,
         )
 
-        api_instance = client.ExtensionsV1beta1Api()
+        api_instance = client.AppsV1Api()
 
         try:
-            api_instance.create_namespaced_deployment(
+            response = api_instance.create_namespaced_deployment(
                 namespace=namespace, body=body, pretty="true"
             )
         except ApiException as e:
-            LOG.error("Exception when call AppsV1beta1Api: %s", e)
+            LOG.error("Exception when call AppsV1Api: %s", e)
             raise e
 
-        return True
+        return True, response
 
     def create_service(
         self,
@@ -116,8 +120,7 @@ class KubernetesClient(object):
         if ports is None:
             ports = []
 
-        metadata = client.V1ObjectMeta(name=name, labels={"app": name})
-        ports = [client.V1ServicePort(port=port) for port in ports]
+        metadata = client.V1ObjectMeta(name=name, labels=selector)
         spec = client.V1ServiceSpec(
             ports=ports, selector=selector, type=service_type
         )
@@ -180,7 +183,7 @@ class KubernetesClient(object):
         return True
 
     def delete_deployment(self, namespace=K8S_NAMESPACE, name=None):
-        api_instance = client.ExtensionsV1beta1Api()
+        api_instance = client.AppsV1Api()
         delete_options = client.V1DeleteOptions(
             propagation_policy="Foreground"
         )
