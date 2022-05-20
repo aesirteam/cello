@@ -17,6 +17,8 @@ class FabricNetwork(NetworkBase):
         self._type = kwargs.get("node_type")
         self._agent_id = kwargs.get("agent_id")
         self._node_id = kwargs.get("node_id")
+        self._org_name = kwargs.get("org_name")
+        self._network_name = kwargs.get("network_name")
         self._deploy_name = "%s" % kwargs.get("node_name")
         self._service_name = "%s" % kwargs.get("node_name")
         # self._ingress_name = "ingress-%s" % str(self._node_id)
@@ -28,14 +30,25 @@ class FabricNetwork(NetworkBase):
         self._container_volume_mounts = None
         self._containers = None
         self._initial_containers = None
-        self._volumes = None
-
+        # self._volumes = None
+        self._volumes = [
+            {
+                "name": "data",
+                "persistentVolumeClaim": {"claimName": "pvc-data"},
+            }
+        ]
         if self._type == FabricNodeType.Ca.name.lower():
             self._container_ports = [7054]
             self._service_ports = [{"port": 7054, "name": "server"}]
             self._image_name = "%s:%s" % (FabricImages.Ca.value, self._version)
             self._pod_name = "ca-server"
             self._init_ca_deployment()
+        elif self._type == FabricNodeType.Orderer.name.lower():
+            self._container_ports = [7050]
+            self._service_ports = [{"port": 7050, "name": "server"}]
+            self._image_name = "%s:%s" % (FabricImages.Orderer.value, self._version)
+            self._pod_name = "orderer"
+            self._init_orderer_deployment()
         elif self._type == FabricNodeType.Peer.name.lower():
             self._container_ports = [7051, 7052]
             self._service_ports = [{"port": 7051, "name": "server"}, {"port": 7052, "name": "grpc"}]
@@ -47,6 +60,8 @@ class FabricNetwork(NetworkBase):
             self._service_ports = []
             self._image_name = ""
             self._pod_name = ""
+            self._container_volume_mounts = None
+            self._volumes = None
 
     def _init_ca_deployment(self):
         self._container_environments = [
@@ -58,14 +73,91 @@ class FabricNetwork(NetworkBase):
                 "name": "FABRIC_CA_SERVER_HOME",
                 "value": "/etc/hyperledger/fabric-ca-server/crypto",
             },
-            {"name": "FABRIC_CA_SERVER_TLS_ENABLED", "value": "true"},
             {
-                "name": "FABRIC_CA_SERVER_CSR_HOSTS",
-                "value": "0.0.0.0",
+                "name": "FABRIC_CA_SERVER_TLS_ENABLED", 
+                "value": "true"
+            },
+            {
+                "name": "FABRIC_CA_SERVER_TLS_CERTFILE", 
+                "value": "/etc/hyperledger/fabric-ca-server-config/ca.{}-cert.pem".format(self._org_name)
+            },
+            {
+                "name": "FABRIC_CA_SERVER_TLS_KEYFILE", 
+                "value": "/etc/hyperledger/fabric-ca-server-config/priv_sk"
+            }
+        ]
+        self._container_volume_mounts = [
+            {
+                "mountPath": "/etc/hyperledger/fabric-ca-server-config",
+                "name": "data",
+                "subPath": "pki/{org}/crypto-config/peerOrganizations/{org}/ca/".format(org=self._org_name)
             },
         ]
         self._container_command = ["fabric-ca-server"]
         self._container_command_args = ["start", "-b", "admin:adminpw", "-d"]
+
+    def _init_orderer_deployment(self):
+        self._container_environments = [
+            {
+                "name": "ORDERER_GENERAL_LOGLEVEL",
+                "value": "debug",
+            },
+            {
+                "name": "ORDERER_GENERAL_LISTENADDRESS",
+                "value": "0.0.0.0",
+            },
+            {
+                "name": "ORDERER_GENERAL_GENESISMETHOD", 
+                "value": "file"
+            },
+            {
+                "name": "ORDERER_GENERAL_GENESISFILE", 
+                "value": "/var/hyperledger/orderer/orderer.genesis.block"
+            },
+            {
+                "name": "ORDERER_GENERAL_LOCALMSPID", 
+                "value": "OrdererMSP"
+            },
+            {
+                "name": "ORDERER_GENERAL_LOCALMSPDIR", 
+                "value": "/var/hyperledger/orderer/msp"
+            },
+            {
+                "name": "ORDERER_GENERAL_TLS_ENABLED", 
+                "value": "true"
+            },
+            {
+                "name": "ORDERER_GENERAL_TLS_PRIVATEKEY", 
+                "value": "/var/hyperledger/orderer/tls/server.key"
+            },
+            {
+                "name": "ORDERER_GENERAL_TLS_CERTIFICATE", 
+                "value": "/var/hyperledger/orderer/tls/server.crt"
+            },
+            {
+                "name": "ORDERER_GENERAL_TLS_ROOTCAS", 
+                "value": "[/var/hyperledger/orderer/tls/ca.crt]"
+            }
+        ]
+        domain = self._org_name.split(".",1)[1]
+        self._container_volume_mounts = [
+            {
+                "mountPath": "/var/hyperledger/orderer/orderer.genesis.block",
+                "name": "data",
+                "subPath": "pki/{}/genesis.block".format(self._network_name)
+            },
+            {
+                "mountPath": "/var/hyperledger/orderer/msp",
+                "name": "data",
+                "subPath": "pki/{org}/crypto-config/ordererOrganizations/{domain}/orderers/{node}.{domain}/msp".format(org=self._org_name, domain=domain, node=self._deploy_name)
+            },
+            {
+                "mountPath": "/var/hyperledger/orderer/tls",
+                "name": "data",
+                "subPath": "pki/{org}/crypto-config/ordererOrganizations/{domain}/orderers/{node}.{domain}/tls".format(org=self._org_name, domain=domain, node=self._deploy_name)
+            },
+        ]
+        self._container_command = ["orderer"]
 
     def _init_peer_deployment(self):
         pass
@@ -99,48 +191,6 @@ class FabricNetwork(NetworkBase):
         deployment.update({"containers": containers})
         
         return  deployment
-
-    # def _generate_deployment(self):
-    #     containers = []
-    #     name = "deploy-%s" % str(self._node_id)
-    #     if self._type == FabricNodeType.Ca.name.lower():
-    #         image = "%s:%s" % (CA_IMAGE_NAME, self._version)
-    #         environments = [
-    #             {
-    #                 "name": "FABRIC_CA_HOME",
-    #                 "value": "/etc/hyperledger/fabric-ca-server",
-    #             },
-    #             {
-    #                 "name": "FABRIC_CA_SERVER_HOME",
-    #                 "value": "/etc/hyperledger/fabric-ca-server/crypto",
-    #             },
-    #             {"name": "FABRIC_CA_SERVER_TLS_ENABLED", "value": "true"},
-    #             {
-    #                 "name": "FABRIC_CA_SERVER_CSR_HOSTS",
-    #                 "value": ",".join(CA_HOSTS),
-    #             },
-    #         ]
-    #         ports = [7054]
-    #         command = ["fabric-ca-server"]
-    #         command_args = ["start", "-b", "admin:adminpw", "-d"]
-    #         containers.append(
-    #             {
-    #                 "image": image,
-    #                 "environments": environments,
-    #                 "name": "ca-server",
-    #                 "ports": ports,
-    #                 "command": command,
-    #                 "command_args": command_args,
-    #             }
-    #         )
-    #     elif self._type == FabricNodeType.Peer.name.lower():
-    #         image = "%s:%s" % (PEER_IMAGE_NAME, self._version)
-
-    #         ports = [7051, 7052]
-    #         pass
-    #     else
-    #         pass
-    #     return {"containers": containers, "name": name}
 
     def _generate_service(self):
         return {

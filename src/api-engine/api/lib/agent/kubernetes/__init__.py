@@ -18,20 +18,23 @@ class KubernetesAgent(AgentBase):
             node = {}
         config_file = node.get("k8s_config_file")
         self._project_name = node.get("name")
+        self._network_name = node.get("network_name")
         self._network_type = node.get("network_type")
         self._network_version = node.get("network_version")
         self._node_type = node.get("type")
         self._node_id = str(node.get("id"))
-        self._node_name = node.get("node_name")
         self._agent_id = str(node.get("agent_id"))
-       
+        self._org_name = node.get("org_name")
+
         self._client = KubernetesClient(config_file=config_file)
         self._network = FabricNetwork(
             version=self._network_version,
             node_type=self._node_type,
             agent_id=self._agent_id,
             node_id=self._node_id,
-            node_name=self._node_name
+            node_name=self._project_name.split(".",1)[0],
+            org_name=self._org_name,
+            network_name=self._network_name
         )
         self._client.get_or_create_namespace(name=self._agent_id)
         self._config = self._network.generate_config()

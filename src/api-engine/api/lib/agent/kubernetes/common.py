@@ -8,7 +8,9 @@ from kubernetes.client.rest import ApiException
 LOG = logging.getLogger(__name__)
 
 K8S_NAMESPACE = getattr(settings, "K8S_NAMESPACE", "cello")
-
+GLUSTER_HOSTS = os.getenv("GLUSTER_HOSTS")
+GLUSTER_VOL_NAME = os.getenv("GLUSTER_VOL_NAME")
+GLUSTER_STORAGE_SIZE =  os.getenv("GLUSTER_STORAGE_SIZE", "100Gi")
 
 class KubernetesClient(object):
     def __init__(self, config_file=None):
@@ -44,11 +46,94 @@ class KubernetesClient(object):
                         "Exception when calling CoreV1Api->read_namespace: %s",
                         e,
                     )
+                
+                if (GLUSTER_HOSTS is not None) and (GLUSTER_VOL_NAME is not None):
+                    self.get_or_create_persistentvolumeclaim(namespace=name)
+    
+    def get_or_create_persistentvolumeclaim(self, namespace=K8S_NAMESPACE):
+        pv_name = "pv-{}".format(namespace)
+        endpoint_name = "glusterfs"
+        labels = {"storage.k8s.io/name": "glusterfs", "storage.k8s.io/part-of":"kubernetes-complete-reference"}
+        v1 = client.CoreV1Api()
+        # create persistentVolume(static)
+        try:
+            v1.read_persistent_volume(name=pv_name)
+        except ApiException as e:
+            metadata = client.V1ObjectMeta(name=pv_name, labels=labels)
+            body = client.V1PersistentVolume(
+                metadata=metadata, kind="PersistentVolume", api_version="v1", spec=client.V1PersistentVolumeSpec(
+                    access_modes=["ReadWriteMany"],
+                    capacity={"storage": GLUSTER_STORAGE_SIZE},
+                    glusterfs={"endpoints": endpoint_name, "path": GLUSTER_VOL_NAME},
+                    persistent_volume_reclaim_policy="Retain",
+                    volume_mode="Filesystem"
+                )
+            )
+            try:
+                v1.create_persistent_volume(body)
+            except ApiException as e:
+                LOG.error("Exception when call CoreV1Api: %s", e)
+                raise e
+        
+        # create glusterfs service
+        try:
+            v1.read_namespaced_service(endpoint_name, namespace)
+        except ApiException as e:
+            metadata.name = endpoint_name
+            body = client.V1Service(
+                metadata=metadata, kind="Service", api_version="v1", spec=client.V1ServiceSpec(
+                    ports=[{"protocol": "TCP", "port": 1, "targetPort": 1}],
+                    type="ClusterIP",
+                )
+            )
+            try:
+                v1.create_namespaced_service(namespace, body)
+            except ApiException as e:
+                LOG.error("Exception when call CoreV1Api: %s", e)
+                raise e
+            
+        # create glusterfs endpoint
+        try:
+            v1.read_namespaced_endpoints(endpoint_name, namespace)
+        except ApiException as e:
+            body = client.V1Endpoints(
+                metadata=metadata, kind="Endpoints", api_version="v1", subsets=[
+                    {
+                        "addresses": [{"ip": ip} for ip in GLUSTER_HOSTS.split(",")],
+                        "ports": [{"protocol": "TCP", "port": 1}],
+                    }
+                ]
+            )
+            try:
+                v1.create_namespaced_endpoints(namespace, body)
+            except ApiException as e:
+                LOG.error("Exception when call CoreV1Api: %s", e)
+                raise e
+        
+        # create  persistentvolumeclaim
+        try:
+            v1.read_namespaced_persistent_volume_claim("pvc-data", namespace)
+        except ApiException as e:
+            metadata.name = "pvc-data"
+            body = client.V1PersistentVolumeClaim(
+                metadata=metadata, kind="PersistentVolumeClaim", api_version="v1", spec=client.V1PersistentVolumeClaimSpec(
+                    access_modes=["ReadWriteMany"],
+                    resources={"requests": {"storage": GLUSTER_STORAGE_SIZE}},
+                    volume_name=pv_name,
+                    volume_mode="Filesystem"
+                )
+            )
+            try:
+                v1.create_namespaced_persistent_volume_claim(namespace, body)
+            except ApiException as e:
+                LOG.error("Exception when call CoreV1Api: %s", e)
+                raise e
 
     def create_deployment(self, namespace=K8S_NAMESPACE, *args, **kwargs):
         containers = kwargs.get("containers", [])
         deploy_name = kwargs.get("name")
         labels = kwargs.get("labels", {})
+        volumes = kwargs.get("volumes", [])
         # labels.update({"app": deploy_name})
         container_pods = []
         for container in containers:
@@ -58,7 +143,7 @@ class KubernetesClient(object):
             environments = container.get("environments", [])
             command = container.get("command", [])
             command_args = container.get("command_args", [])
-
+            volume_mounts = container.get("volume_mounts",[])
             environments = [
                 client.V1EnvVar(name=env.get("name"), value=env.get("value"))
                 for env in environments
@@ -75,10 +160,11 @@ class KubernetesClient(object):
                     args=command_args,
                     ports=ports,
                     image_pull_policy="IfNotPresent",
+                    volume_mounts=volume_mounts,
                 )
             )
         deployment_metadata = client.V1ObjectMeta(name=deploy_name)
-        pod_spec = client.V1PodSpec(containers=container_pods)
+        pod_spec = client.V1PodSpec(containers=container_pods, volumes=volumes)
         spec_metadata = client.V1ObjectMeta(labels=labels)
         template_spec = client.V1PodTemplateSpec(
             metadata=spec_metadata, spec=pod_spec

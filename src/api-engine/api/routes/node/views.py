@@ -465,10 +465,10 @@ class NodeViewSet(viewsets.ViewSet):
                 raise ResourceNotFound
             
             info = {}
+            info["org_name"] = org.name
             org_name = org.name if node.type == "peer" else org.name.split(".", 1)[1]
             # get info of node, e.g, tls, msp, config.
             info["id"] = node.id
-            info["node_name"] = node.name
             info["status"] = node.status
             info["msp"] = node.msp
             info["tls"] = node.tls
@@ -477,6 +477,7 @@ class NodeViewSet(viewsets.ViewSet):
             info["name"] = "{}.{}".format(node.name, org_name)
             info["bootstrap_block"] = network.genesisblock
             info["urls"] = agent.urls
+            info["network_name"] = network.name
             info["network_type"] = network.type
             info["network_version"] = FabricVersions.V1_4.value
             info["agent_id"] = agent.id
