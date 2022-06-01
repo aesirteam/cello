@@ -31,6 +31,9 @@ from api.routes.channel.serializers import (
 )
 from api.common import ok, err
 
+import logging
+LOG = logging.getLogger(__name__)
+
 class ChannelViewSet(viewsets.ViewSet):
     """Class represents Channel related operations."""
     authentication_classes = (JSONWebTokenAuthentication, TokenAuth)
@@ -171,6 +174,7 @@ class ChannelViewSet(viewsets.ViewSet):
         if serializer.is_valid(raise_exception=True):
             peers = serializer.validated_data.get("peers")
             channel = Channel.objects.get(id=pk)
+            LOG.debug(channel)
             try:
                 org = request.user.organization
                 org_name = org.name

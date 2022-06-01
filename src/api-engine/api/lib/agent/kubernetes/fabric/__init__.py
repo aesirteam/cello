@@ -13,14 +13,17 @@ class FabricNetwork(NetworkBase):
     def __init__(self, *args, **kwargs):
         super(FabricNetwork, self).__init__(*args, **kwargs)
 
+        self._name = kwargs.get("name")
         self._version = kwargs.get("version")
         self._type = kwargs.get("node_type")
         self._agent_id = kwargs.get("agent_id")
+        self._node_name = kwargs.get("node_name")
         self._node_id = kwargs.get("node_id")
         self._org_name = kwargs.get("org_name")
         self._network_name = kwargs.get("network_name")
-        self._deploy_name = "%s" % kwargs.get("node_name")
-        self._service_name = "%s" % kwargs.get("node_name")
+        self._domain = self._org_name.split(".",1)[1] if self._org_name is not None else ""
+        self._deploy_name = "%s" % self._node_name
+        self._service_name = "%s" % self._node_name
         # self._ingress_name = "ingress-%s" % str(self._node_id)
         self._container_image = ""
         self._container_environments = None
@@ -40,7 +43,7 @@ class FabricNetwork(NetworkBase):
         if self._type == FabricNodeType.Ca.name.lower():
             self._container_ports = [7054]
             self._service_ports = [{"port": 7054, "name": "server"}]
-            self._image_name = "%s:%s" % (FabricImages.Ca.value, self._version)
+            self._image_name = "%s:%s" % (FabricImages.Ca.value, "1.4")
             self._pod_name = "ca-server"
             self._init_ca_deployment()
         elif self._type == FabricNodeType.Orderer.name.lower():
@@ -70,31 +73,32 @@ class FabricNetwork(NetworkBase):
                 "value": "/etc/hyperledger/fabric-ca-server",
             },
             {
-                "name": "FABRIC_CA_SERVER_HOME",
-                "value": "/etc/hyperledger/fabric-ca-server/crypto",
+                "name": "FABRIC_CA_SERVER_CA_NAME",
+                "value": self._name,
             },
             {
-                "name": "FABRIC_CA_SERVER_TLS_ENABLED", 
-                "value": "true"
-            },
-            {
-                "name": "FABRIC_CA_SERVER_TLS_CERTFILE", 
-                "value": "/etc/hyperledger/fabric-ca-server-config/ca.{}-cert.pem".format(self._org_name)
-            },
-            {
-                "name": "FABRIC_CA_SERVER_TLS_KEYFILE", 
-                "value": "/etc/hyperledger/fabric-ca-server-config/priv_sk"
+                "name": "FABRIC_CA_SERVER_TLS_ENABLED",
+                "value": "true",
             }
         ]
         self._container_volume_mounts = [
             {
                 "mountPath": "/etc/hyperledger/fabric-ca-server-config",
                 "name": "data",
-                "subPath": "pki/{org}/crypto-config/peerOrganizations/{org}/ca/".format(org=self._org_name)
+                "subPath": "./{org}/crypto-config/peerOrganizations/{org}/ca/".format(org=self._org_name)
             },
         ]
         self._container_command = ["fabric-ca-server"]
-        self._container_command_args = ["start", "-b", "admin:adminpw", "-d"]
+        self._container_command_args = [
+            "start", 
+            "--ca.certfile", 
+            "/etc/hyperledger/fabric-ca-server-config/ca.{}-cert.pem".format(self._org_name),
+            "--ca.keyfile",
+            "/etc/hyperledger/fabric-ca-server-config/priv_sk",
+            "-b", 
+            "admin:adminpw", 
+            "-d"
+        ]
 
     def _init_orderer_deployment(self):
         self._container_environments = [
@@ -107,20 +111,20 @@ class FabricNetwork(NetworkBase):
                 "value": "0.0.0.0",
             },
             {
-                "name": "ORDERER_GENERAL_GENESISMETHOD", 
+                "name": "ORDERER_GENERAL_BOOTSTRAPMETHOD", 
                 "value": "file"
             },
             {
-                "name": "ORDERER_GENERAL_GENESISFILE", 
-                "value": "/var/hyperledger/orderer/orderer.genesis.block"
+                "name": "ORDERER_GENERAL_BOOTSTRAPFILE", 
+                "value": "/etc/hyperledger/configtx/genesis.block"
             },
             {
                 "name": "ORDERER_GENERAL_LOCALMSPID", 
-                "value": "OrdererMSP"
+                "value": "{}MSP".format(self._node_name.capitalize())
             },
             {
                 "name": "ORDERER_GENERAL_LOCALMSPDIR", 
-                "value": "/var/hyperledger/orderer/msp"
+                "value": "/etc/hyperledger/fabric/msp"
             },
             {
                 "name": "ORDERER_GENERAL_TLS_ENABLED", 
@@ -128,39 +132,93 @@ class FabricNetwork(NetworkBase):
             },
             {
                 "name": "ORDERER_GENERAL_TLS_PRIVATEKEY", 
-                "value": "/var/hyperledger/orderer/tls/server.key"
+                "value": "/etc/hyperledger/fabric/tls/server.key"
             },
             {
                 "name": "ORDERER_GENERAL_TLS_CERTIFICATE", 
-                "value": "/var/hyperledger/orderer/tls/server.crt"
+                "value": "/etc/hyperledger/fabric/tls/server.crt"
             },
             {
                 "name": "ORDERER_GENERAL_TLS_ROOTCAS", 
-                "value": "[/var/hyperledger/orderer/tls/ca.crt]"
+                "value": "[/etc/hyperledger/fabric/tls/ca.crt]"
             }
         ]
-        domain = self._org_name.split(".",1)[1]
         self._container_volume_mounts = [
             {
-                "mountPath": "/var/hyperledger/orderer/orderer.genesis.block",
+                "mountPath": "/etc/hyperledger/configtx",
                 "name": "data",
-                "subPath": "pki/{}/genesis.block".format(self._network_name)
+                "subPath": "./{}/".format(self._network_name)
             },
             {
-                "mountPath": "/var/hyperledger/orderer/msp",
+                "mountPath": "/etc/hyperledger/fabric/msp",
                 "name": "data",
-                "subPath": "pki/{org}/crypto-config/ordererOrganizations/{domain}/orderers/{node}.{domain}/msp".format(org=self._org_name, domain=domain, node=self._deploy_name)
+                "subPath": "./{}/crypto-config/ordererOrganizations/{}/orderers/{}/msp".format(self._org_name, self._domain, self._name)
             },
             {
-                "mountPath": "/var/hyperledger/orderer/tls",
+                "mountPath": "/etc/hyperledger/fabric/tls",
                 "name": "data",
-                "subPath": "pki/{org}/crypto-config/ordererOrganizations/{domain}/orderers/{node}.{domain}/tls".format(org=self._org_name, domain=domain, node=self._deploy_name)
+                "subPath": "./{}/crypto-config/ordererOrganizations/{}/orderers/{}/tls".format(self._org_name, self._domain, self._name)
             },
         ]
         self._container_command = ["orderer"]
 
     def _init_peer_deployment(self):
-        pass
+        self._container_environments = [
+            {
+                "name": "FABRIC_LOGGING_SPEC",
+                "value": "debug",
+            },
+            {
+                "name": "CORE_PEER_ID",
+                "value": self._name,
+            },
+            {
+                "name": "CORE_PEER_ADDRESS", 
+                "value": "0.0.0.0:7051"
+            },
+            {
+                "name": "CORE_PEER_LOCALMSPID", 
+                "value": "{}MSP".format(self._node_name.capitalize())
+            },
+            {
+                "name": "CORE_PEER_MSPCONFIGPATH", 
+                "value": "/etc/hyperledger/peer/msp"
+            },
+            {
+                "name": "CORE_LEDGER_STATE_STATEDATABASE", 
+                "value": "LevelDB"
+            },
+            {
+                "name": "CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS", 
+                "value": "couchdb:5984"
+            },
+            {
+                "name": "CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME", 
+                "value": ""
+            },
+            {
+                "name": "CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD", 
+                "value": ""
+            }
+        ]
+        self._container_volume_mounts = [
+            {
+                "mountPath": "/var/hyperledger/configtx",
+                "name": "data",
+                "subPath": "./{}/".format(self._network_name)
+            },
+            {
+                "mountPath": "/etc/hyperledger/peer/msp",
+                "name": "data",
+                "subPath": "./{org}/crypto-config/peerOrganizations/{org}/peers/{name}/msp".format(org=self._org_name, name=self._name)
+            },
+            {
+                "mountPath": "/etc/hyperledger/msp/users",
+                "name": "data",
+                "subPath": "./{org}/crypto-config/peerOrganizations/{org}/users".format(org=self._org_name)
+            },
+        ]
+        self._container_command = ["peer", "node", "start"]
 
     def _generate_deployment(self):
         deployment = {"name": self._deploy_name, "labels":  {"app": self._node_id}}

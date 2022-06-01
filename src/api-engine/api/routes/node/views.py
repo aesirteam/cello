@@ -466,6 +466,7 @@ class NodeViewSet(viewsets.ViewSet):
             
             info = {}
             info["org_name"] = org.name
+            info["node_name"] = node.name
             org_name = org.name if node.type == "peer" else org.name.split(".", 1)[1]
             # get info of node, e.g, tls, msp, config.
             info["id"] = node.id
@@ -479,7 +480,7 @@ class NodeViewSet(viewsets.ViewSet):
             info["urls"] = agent.urls
             info["network_name"] = network.name
             info["network_type"] = network.type
-            info["network_version"] = FabricVersions.V1_4.value
+            info["network_version"] = FabricVersions.V2_2.value
             info["agent_id"] = agent.id
             info["agent_type"] = agent.type
             info["container_name"] = "{}.{}".format(node.name, org_name)

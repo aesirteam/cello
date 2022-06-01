@@ -33,9 +33,9 @@ from api.routes.agent.serializers import (
     AgentInfoSerializer,
     AgentApplySerializer,
 )
-# from api.routes.organization.serializers import (
-#     OrganizationUpdateBody
-# )
+from api.routes.organization.serializers import (
+    OrganizationUpdateBody
+)
 from api.utils.common import with_common_response, any_of
 from api.auth import TokenAuth
 from api.common import ok, err
@@ -184,18 +184,18 @@ class AgentViewSet(viewsets.ViewSet):
                     body.update({"organization": org})
 
                 agent = Agent(**body)
-                # agent.organization.agents = agent.id
+                agent.organization.agents = agent.id
                 agent.save()
 
-                # serializer1 = OrganizationUpdateBody(data=agent.organization.__dict__)
-                # if serializer1.is_valid(raise_exception=True):
-                #     name = serializer1.validated_data.get("name")
-                #     agents = serializer1.validated_data.get("agents")
-                #     try:
-                #         Organization.objects.get(name=name)
-                #     except ObjectDoesNotExist as e:
-                #         raise e
-                #     organization = Organization.objects.filter(name=name).update(agents=agents)
+                serializer1 = OrganizationUpdateBody(data=agent.organization.__dict__)
+                if serializer1.is_valid(raise_exception=True):
+                    name = serializer1.validated_data.get("name")
+                    agents = serializer1.validated_data.get("agents")
+                    try:
+                        Organization.objects.get(name=name)
+                    except ObjectDoesNotExist as e:
+                        raise e
+                    organization = Organization.objects.filter(name=name).update(agents=agents)
 
                 response = AgentIDSerializer(data=agent.__dict__)
                 if response.is_valid(raise_exception=True):

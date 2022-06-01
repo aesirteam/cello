@@ -128,7 +128,8 @@ class NetworkViewSet(viewsets.ViewSet):
                 raise ResourceNotFound
 
             info = {}
-
+            info["org_name"] = org.name
+            info["node_name"] = node.name
             org_name = org.name if node.type == "peer" else org.name.split(".", 1)[1]
             # get info of node, e.g, tls, msp, config.
             info["status"] = node.status
@@ -139,7 +140,9 @@ class NetworkViewSet(viewsets.ViewSet):
             info["name"] = "{}.{}".format(node.name, org_name)
             info["bootstrap_block"] = network.genesisblock
             info["urls"] = agent.urls
+            info["network_name"] = network.name
             info["network_type"] = network.type
+            info["agent_id"] = agent.id
             info["agent_type"] = agent.type
             info["ports"] = ports
             return info

@@ -64,7 +64,7 @@ class KubernetesClient(object):
                 metadata=metadata, kind="PersistentVolume", api_version="v1", spec=client.V1PersistentVolumeSpec(
                     access_modes=["ReadWriteMany"],
                     capacity={"storage": GLUSTER_STORAGE_SIZE},
-                    glusterfs={"endpoints": endpoint_name, "path": GLUSTER_VOL_NAME},
+                    glusterfs={"endpoints": endpoint_name, "path":  GLUSTER_VOL_NAME},
                     persistent_volume_reclaim_policy="Retain",
                     volume_mode="Filesystem"
                 )
